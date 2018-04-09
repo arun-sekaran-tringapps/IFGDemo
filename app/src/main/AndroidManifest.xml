@@ -6,6 +6,8 @@
         android:glEsVersion="0x00020000"
         android:required="true"
         />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -43,12 +45,6 @@
                     android:host="appr.tc"
                     />
             </intent-filter>
-        </activity>
-
-        <activity
-            android:name="SettingsActivity"
-            android:label="@string/settings_name"
-            >
         </activity>
 
         <activity
