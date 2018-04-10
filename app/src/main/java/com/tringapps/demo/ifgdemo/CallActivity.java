@@ -32,7 +32,6 @@ import android.view.WindowManager.LayoutParams;
 import android.widget.Toast;
 
 import com.tringapps.demo.ifgdemo.AppRTCClient.*;
-import com.tringapps.demo.ifgdemo.AppRTCAudioManager.*;
 import org.webrtc.EglBase;
 import org.webrtc.IceCandidate;
 import org.webrtc.Logging;
@@ -47,7 +46,6 @@ import org.webrtc.VideoRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 import static com.tringapps.demo.ifgdemo.PeerConnectionClient.AUDIO_CODEC_OPUS;
 import static com.tringapps.demo.ifgdemo.PeerConnectionClient.VIDEO_CODEC_VP8;
@@ -57,8 +55,7 @@ import static com.tringapps.demo.ifgdemo.PeerConnectionClient.VIDEO_CODEC_VP8;
  * and call view.
  */
 public class CallActivity extends Activity implements AppRTCClient.SignalingEvents,
-                                                      PeerConnectionClient.PeerConnectionEvents,
-                                                      CallFragment.OnCallEvents {
+                                                      PeerConnectionClient.PeerConnectionEvents{
   private static final String TAG = CallActivity.class.getSimpleName();
 
   public static final String EXTRA_ROOMID = "org.appspot.apprtc.ROOMID";
@@ -115,11 +112,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
   // True if local view is in the fullscreen renderer.
   private boolean isSwappedFeeds;
 
-  // Controls
-  private CallFragment callFragment;
-  private HudFragment hudFragment;
-  private CpuMonitor cpuMonitor;
-
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -140,16 +132,14 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
     // Create UI controls.
     pipRenderer = (SurfaceViewRenderer) findViewById(R.id.pip_video_view);
     fullscreenRenderer = (SurfaceViewRenderer) findViewById(R.id.fullscreen_video_view);
-    callFragment = new CallFragment();
-    hudFragment = new HudFragment();
-
-    // Show/hide call control fragment on view click.
-    View.OnClickListener listener = new View.OnClickListener() {
+    findViewById(R.id.button_call_disconnect).setOnClickListener(new View.OnClickListener() {
       @Override
-      public void onClick(View view) {
-        toggleCallControlFragmentVisibility();
+      public void onClick(View v) {
+        disconnect();
       }
-    };
+    });
+
+
 
     // Swap feeds on pip view click.
     pipRenderer.setOnClickListener(new View.OnClickListener() {
@@ -159,7 +149,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
       }
     });
 
-    fullscreenRenderer.setOnClickListener(listener);
     remoteRenderers.add(remoteProxyRenderer);
 
     final Intent intent = getIntent();
@@ -216,7 +205,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
         new PeerConnectionClient.PeerConnectionParameters(true, false,
             false, displayMetrics.widthPixels, displayMetrics.heightPixels, 30,
             1700, VIDEO_CODEC_VP8, true, false,
-            32, AUDIO_CODEC_OPUS, true, false,
+            0, AUDIO_CODEC_OPUS, true, false,
             false, false, false, false, false,
             false, null);
 
@@ -227,22 +216,8 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
     roomConnectionParameters =
         new RoomConnectionParameters(roomUri.toString(), roomId, false, urlParameters);
 
-    // Create CPU monitor
-    cpuMonitor = new CpuMonitor(this);
-    hudFragment.setCpuMonitor(cpuMonitor);
-
-    // Send intent arguments to fragments.
-    callFragment.setArguments(intent.getExtras());
-    hudFragment.setArguments(intent.getExtras());
-    // Activate call and HUD fragments and start the call.
-    FragmentTransaction ft = getFragmentManager().beginTransaction();
-    ft.add(R.id.call_fragment_container, callFragment);
-    ft.add(R.id.hud_fragment_container, hudFragment);
-    ft.commit();
-
 
     peerConnectionClient = PeerConnectionClient.getInstance();
-    peerConnectionClient.setAudioEnabled(false);
     peerConnectionClient.createPeerConnectionFactory(
         getApplicationContext(), peerConnectionParameters, CallActivity.this);
 
@@ -306,14 +281,12 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
   public void onStop() {
     super.onStop();
     activityRunning = false;
-    cpuMonitor.pause();
   }
 
   @Override
   public void onStart() {
     super.onStart();
     activityRunning = true;
-    cpuMonitor.resume();
   }
 
   @Override
@@ -326,33 +299,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
     activityRunning = false;
     rootEglBase.release();
     super.onDestroy();
-  }
-
-  // CallFragment.OnCallEvents interface implementation.
-  @Override
-  public void onCallHangUp() {
-    disconnect();
-  }
-
-
-
-  // Helper functions.
-  private void toggleCallControlFragmentVisibility() {
-    if (!iceConnected || !callFragment.isAdded()) {
-      return;
-    }
-    // Show/hide call control fragment
-    callControlFragmentVisible = !callControlFragmentVisible;
-    FragmentTransaction ft = getFragmentManager().beginTransaction();
-    if (callControlFragmentVisible) {
-      ft.show(callFragment);
-      ft.show(hudFragment);
-    } else {
-      ft.hide(callFragment);
-      ft.hide(hudFragment);
-    }
-    ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE);
-    ft.commit();
   }
 
   private void startCall() {
@@ -664,18 +610,10 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
 
   @Override
   public void onPeerConnectionStatsReady(final StatsReport[] reports) {
-    runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        if (!isError && iceConnected) {
-          hudFragment.updateEncoderStatistics(reports);
-        }
-      }
-    });
   }
 
   @Override
   public void onPeerConnectionError(final String description) {
-    //reportError(description);
+    reportError(description);
   }
 }

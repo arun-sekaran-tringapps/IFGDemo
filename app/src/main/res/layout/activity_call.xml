@@ -14,13 +14,14 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"/>
 
-    <FrameLayout
-        android:id="@+id/call_fragment_container"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-    <FrameLayout
-        android:id="@+id/hud_fragment_container"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+    <ImageButton
+        android:id="@+id/button_call_disconnect"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="32dp"
+        android:layout_gravity="bottom|center"
+        android:background="@drawable/disconnect"
+        android:contentDescription="@string/disconnect_call" />
 
 </merge>

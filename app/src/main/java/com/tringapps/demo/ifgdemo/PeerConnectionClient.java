@@ -16,8 +16,6 @@ import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import com.tringapps.demo.ifgdemo.AppRTCClient.SignalingParameters;
-import org.webrtc.AudioSource;
-import org.webrtc.AudioTrack;
 import org.webrtc.CameraVideoCapturer;
 import org.webrtc.DataChannel;
 import org.webrtc.EglBase;
@@ -40,11 +38,6 @@ import org.webrtc.VideoRenderer;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 import org.webrtc.voiceengine.WebRtcAudioManager;
-import org.webrtc.voiceengine.WebRtcAudioRecord;
-import org.webrtc.voiceengine.WebRtcAudioRecord.AudioRecordStartErrorCode;
-import org.webrtc.voiceengine.WebRtcAudioRecord.WebRtcAudioRecordErrorCallback;
-import org.webrtc.voiceengine.WebRtcAudioTrack;
-import org.webrtc.voiceengine.WebRtcAudioTrack.WebRtcAudioTrackErrorCallback;
 import org.webrtc.voiceengine.WebRtcAudioUtils;
 
 import java.io.File;
@@ -110,10 +103,8 @@ public class PeerConnectionClient {
   private PeerConnectionFactory factory;
   private PeerConnection peerConnection;
   PeerConnectionFactory.Options options = null;
-  private AudioSource audioSource;
   private VideoSource videoSource;
   private boolean videoCallEnabled;
-  private boolean preferIsac;
   private String preferredVideoCodec;
   private boolean videoCapturerStopped;
   private boolean isError;
@@ -125,7 +116,6 @@ public class PeerConnectionClient {
   private int videoWidth;
   private int videoHeight;
   private int videoFps;
-  private MediaConstraints audioConstraints;
   private ParcelFileDescriptor aecDumpFileDescriptor;
   private MediaConstraints sdpMediaConstraints;
   private PeerConnectionParameters peerConnectionParameters;
@@ -143,9 +133,6 @@ public class PeerConnectionClient {
   private VideoTrack localVideoTrack;
   private VideoTrack remoteVideoTrack;
   private RtpSender localVideoSender;
-  // enableAudio is set to true if audio should be sent.
-  private boolean enableAudio;
-  private AudioTrack localAudioTrack;
   private DataChannel dataChannel;
   private boolean dataChannelEnabled;
 
@@ -311,7 +298,6 @@ public class PeerConnectionClient {
     // Reset variables to initial states.
     factory = null;
     peerConnection = null;
-    preferIsac = false;
     videoCapturerStopped = false;
     isError = false;
     queuedRemoteCandidates = null;
@@ -322,8 +308,6 @@ public class PeerConnectionClient {
     localVideoTrack = null;
     remoteVideoTrack = null;
     localVideoSender = null;
-    enableAudio = false;
-    localAudioTrack = null;
     statsTimer = new Timer();
 
     executor.execute(new Runnable() {
@@ -424,10 +408,6 @@ public class PeerConnectionClient {
     PeerConnectionFactory.initializeFieldTrials(fieldTrials);
     Log.d(TAG, "Field trials: " + fieldTrials);
 
-    // Check if ISAC is used by default.
-    preferIsac = peerConnectionParameters.audioCodec != null
-        && peerConnectionParameters.audioCodec.equals(AUDIO_CODEC_ISAC);
-
     // Enable/disable OpenSL ES playback.
     if (!peerConnectionParameters.useOpenSLES) {
       Log.d(TAG, "Disable OpenSL ES audio even if device supports it");
@@ -460,45 +440,6 @@ public class PeerConnectionClient {
       Log.d(TAG, "Enable built-in NS if device supports it");
       WebRtcAudioUtils.setWebRtcBasedNoiseSuppressor(false);
     }
-
-    // Set audio record error callbacks.
-    WebRtcAudioRecord.setErrorCallback(new WebRtcAudioRecordErrorCallback() {
-      @Override
-      public void onWebRtcAudioRecordInitError(String errorMessage) {
-        Log.e(TAG, "onWebRtcAudioRecordInitError: " + errorMessage);
-        reportError(errorMessage);
-      }
-
-      @Override
-      public void onWebRtcAudioRecordStartError(
-              AudioRecordStartErrorCode errorCode, String errorMessage) {
-        Log.e(TAG, "onWebRtcAudioRecordStartError: " + errorCode + ". " + errorMessage);
-        reportError(errorMessage);
-      }
-
-      @Override
-      public void onWebRtcAudioRecordError(String errorMessage) {
-        Log.e(TAG, "onWebRtcAudioRecordError: " + errorMessage);
-        reportError(errorMessage);
-      }
-    });
-
-    WebRtcAudioTrack.setErrorCallback(new WebRtcAudioTrackErrorCallback() {
-      @Override
-      public void onWebRtcAudioTrackInitError(String errorMessage) {
-        reportError(errorMessage);
-      }
-
-      @Override
-      public void onWebRtcAudioTrackStartError(String errorMessage) {
-        reportError(errorMessage);
-      }
-
-      @Override
-      public void onWebRtcAudioTrackError(String errorMessage) {
-        reportError(errorMessage);
-      }
-    });
 
     // Create peer connection factory.
     PeerConnectionFactory.initializeAndroidGlobals(
@@ -546,25 +487,7 @@ public class PeerConnectionClient {
       Logging.d(TAG, "Capturing format: " + videoWidth + "x" + videoHeight + "@" + videoFps);
     }
 
-    // Create audio constraints.
-    audioConstraints = new MediaConstraints();
-    // added for audio performance measurements
-    if (peerConnectionParameters.noAudioProcessing) {
-      Log.d(TAG, "Disabling audio processing");
-      audioConstraints.mandatory.add(
-          new MediaConstraints.KeyValuePair(AUDIO_ECHO_CANCELLATION_CONSTRAINT, "false"));
-      audioConstraints.mandatory.add(
-          new MediaConstraints.KeyValuePair(AUDIO_AUTO_GAIN_CONTROL_CONSTRAINT, "false"));
-      audioConstraints.mandatory.add(
-          new MediaConstraints.KeyValuePair(AUDIO_HIGH_PASS_FILTER_CONSTRAINT, "false"));
-      audioConstraints.mandatory.add(
-          new MediaConstraints.KeyValuePair(AUDIO_NOISE_SUPPRESSION_CONSTRAINT, "false"));
-    }
-    if (peerConnectionParameters.enableLevelControl) {
-      Log.d(TAG, "Enabling level control.");
-      audioConstraints.mandatory.add(
-          new MediaConstraints.KeyValuePair(AUDIO_LEVEL_CONTROL_CONSTRAINT, "true"));
-    }
+
     // Create SDP constraints.
     sdpMediaConstraints = new MediaConstraints();
     sdpMediaConstraints.mandatory.add(
@@ -628,7 +551,6 @@ public class PeerConnectionClient {
       mediaStream.addTrack(createVideoTrack(videoCapturer));
     }
 
-    mediaStream.addTrack(createAudioTrack());
     peerConnection.addStream(mediaStream);
     if (videoCallEnabled) {
       findVideoSender();
@@ -664,11 +586,7 @@ public class PeerConnectionClient {
       peerConnection.dispose();
       peerConnection = null;
     }
-    Log.d(TAG, "Closing audio source.");
-    if (audioSource != null) {
-      audioSource.dispose();
-      audioSource = null;
-    }
+
     Log.d(TAG, "Stopping capture.");
     if (videoCapturer != null) {
       try {
@@ -745,32 +663,9 @@ public class PeerConnectionClient {
     }
   }
 
-  public void setAudioEnabled(final boolean enable) {
-    executor.execute(new Runnable() {
-      @Override
-      public void run() {
-        enableAudio = enable;
-        if (localAudioTrack != null) {
-          localAudioTrack.setEnabled(enableAudio);
-        }
-      }
-    });
-  }
 
-  public void setVideoEnabled(final boolean enable) {
-    executor.execute(new Runnable() {
-      @Override
-      public void run() {
-        renderVideo = enable;
-        if (localVideoTrack != null) {
-          localVideoTrack.setEnabled(renderVideo);
-        }
-        if (remoteVideoTrack != null) {
-          remoteVideoTrack.setEnabled(renderVideo);
-        }
-      }
-    });
-  }
+
+
 
   public void createOffer() {
     executor.execute(new Runnable() {
@@ -836,16 +731,11 @@ public class PeerConnectionClient {
           return;
         }
         String sdpDescription = sdp.description;
-        if (preferIsac) {
-          sdpDescription = preferCodec(sdpDescription, AUDIO_CODEC_ISAC, true);
-        }
+
         if (videoCallEnabled) {
-          sdpDescription = preferCodec(sdpDescription, preferredVideoCodec, false);
+          sdpDescription = preferCodec(sdpDescription, preferredVideoCodec);
         }
-        if (peerConnectionParameters.audioStartBitrate > 0) {
-          sdpDescription = setStartBitrate(
-              AUDIO_CODEC_OPUS, false, sdpDescription, peerConnectionParameters.audioStartBitrate);
-        }
+
         Log.d(TAG, "Set remote SDP.");
         SessionDescription sdpRemote = new SessionDescription(sdp.type, sdpDescription);
         peerConnection.setRemoteDescription(sdpObserver, sdpRemote);
@@ -853,34 +743,7 @@ public class PeerConnectionClient {
     });
   }
 
-  public void stopVideoSource() {
-    executor.execute(new Runnable() {
-      @Override
-      public void run() {
-        if (videoCapturer != null && !videoCapturerStopped) {
-          Log.d(TAG, "Stop video source.");
-          try {
-            videoCapturer.stopCapture();
-          } catch (InterruptedException e) {
-          }
-          videoCapturerStopped = true;
-        }
-      }
-    });
-  }
 
-  public void startVideoSource() {
-    executor.execute(new Runnable() {
-      @Override
-      public void run() {
-        if (videoCapturer != null && videoCapturerStopped) {
-          Log.d(TAG, "Restart video source.");
-          videoCapturer.startCapture(videoWidth, videoHeight, videoFps);
-          videoCapturerStopped = false;
-        }
-      }
-    });
-  }
 
   public void setVideoMaxBitrate(final Integer maxBitrateKbps) {
     executor.execute(new Runnable() {
@@ -926,12 +789,7 @@ public class PeerConnectionClient {
     });
   }
 
-  private AudioTrack createAudioTrack() {
-    audioSource = factory.createAudioSource(audioConstraints);
-    localAudioTrack = factory.createAudioTrack(AUDIO_TRACK_ID, audioSource);
-    localAudioTrack.setEnabled(enableAudio);
-    return localAudioTrack;
-  }
+
 
   private VideoTrack createVideoTrack(VideoCapturer capturer) {
     videoSource = factory.createVideoSource(capturer);
@@ -955,72 +813,10 @@ public class PeerConnectionClient {
     }
   }
 
-  private static String setStartBitrate(
-          String codec, boolean isVideoCodec, String sdpDescription, int bitrateKbps) {
-    String[] lines = sdpDescription.split("\r\n");
-    int rtpmapLineIndex = -1;
-    boolean sdpFormatUpdated = false;
-    String codecRtpMap = null;
-    // Search for codec rtpmap in format
-    // a=rtpmap:<payload type> <encoding name>/<clock rate> [/<encoding parameters>]
-    String regex = "^a=rtpmap:(\\d+) " + codec + "(/\\d+)+[\r]?$";
-    Pattern codecPattern = Pattern.compile(regex);
-    for (int i = 0; i < lines.length; i++) {
-      Matcher codecMatcher = codecPattern.matcher(lines[i]);
-      if (codecMatcher.matches()) {
-        codecRtpMap = codecMatcher.group(1);
-        rtpmapLineIndex = i;
-        break;
-      }
-    }
-    if (codecRtpMap == null) {
-      Log.w(TAG, "No rtpmap for " + codec + " codec");
-      return sdpDescription;
-    }
-    Log.d(TAG, "Found " + codec + " rtpmap " + codecRtpMap + " at " + lines[rtpmapLineIndex]);
-
-    // Check if a=fmtp string already exist in remote SDP for this codec and
-    // update it with new bitrate parameter.
-    regex = "^a=fmtp:" + codecRtpMap + " \\w+=\\d+.*[\r]?$";
-    codecPattern = Pattern.compile(regex);
-    for (int i = 0; i < lines.length; i++) {
-      Matcher codecMatcher = codecPattern.matcher(lines[i]);
-      if (codecMatcher.matches()) {
-        Log.d(TAG, "Found " + codec + " " + lines[i]);
-        if (isVideoCodec) {
-          lines[i] += "; " + VIDEO_CODEC_PARAM_START_BITRATE + "=" + bitrateKbps;
-        } else {
-          lines[i] += "; " + AUDIO_CODEC_PARAM_BITRATE + "=" + (bitrateKbps * 1000);
-        }
-        Log.d(TAG, "Update remote SDP line: " + lines[i]);
-        sdpFormatUpdated = true;
-        break;
-      }
-    }
-
-    StringBuilder newSdpDescription = new StringBuilder();
-    for (int i = 0; i < lines.length; i++) {
-      newSdpDescription.append(lines[i]).append("\r\n");
-      // Append new a=fmtp line if no such line exist for a codec.
-      if (!sdpFormatUpdated && i == rtpmapLineIndex) {
-        String bitrateSet;
-        if (isVideoCodec) {
-          bitrateSet =
-              "a=fmtp:" + codecRtpMap + " " + VIDEO_CODEC_PARAM_START_BITRATE + "=" + bitrateKbps;
-        } else {
-          bitrateSet = "a=fmtp:" + codecRtpMap + " " + AUDIO_CODEC_PARAM_BITRATE + "="
-              + (bitrateKbps * 1000);
-        }
-        Log.d(TAG, "Add remote SDP line: " + bitrateSet);
-        newSdpDescription.append(bitrateSet).append("\r\n");
-      }
-    }
-    return newSdpDescription.toString();
-  }
 
   /** Returns the line number containing "m=audio|video", or -1 if no such line exists. */
-  private static int findMediaDescriptionLine(boolean isAudio, String[] sdpLines) {
-    final String mediaDescription = isAudio ? "m=audio " : "m=video ";
+  private static int findMediaDescriptionLine( String[] sdpLines) {
+    final String mediaDescription = "m=video ";
     for (int i = 0; i < sdpLines.length; ++i) {
       if (sdpLines[i].startsWith(mediaDescription)) {
         return i;
@@ -1065,9 +861,9 @@ public class PeerConnectionClient {
     return joinString(newLineParts, " ", false /* delimiterAtEnd */);
   }
 
-  private static String preferCodec(String sdpDescription, String codec, boolean isAudio) {
+  private static String preferCodec(String sdpDescription, String codec) {
     final String[] lines = sdpDescription.split("\r\n");
-    final int mLineIndex = findMediaDescriptionLine(isAudio, lines);
+    final int mLineIndex = findMediaDescriptionLine(lines);
     if (mLineIndex == -1) {
       Log.w(TAG, "No mediaDescription line, so can't prefer " + codec);
       return sdpDescription;
@@ -1288,11 +1084,9 @@ public class PeerConnectionClient {
         return;
       }
       String sdpDescription = origSdp.description;
-      if (preferIsac) {
-        sdpDescription = preferCodec(sdpDescription, AUDIO_CODEC_ISAC, true);
-      }
+
       if (videoCallEnabled) {
-        sdpDescription = preferCodec(sdpDescription, preferredVideoCodec, false);
+        sdpDescription = preferCodec(sdpDescription, preferredVideoCodec);
       }
       final SessionDescription sdp = new SessionDescription(origSdp.type, sdpDescription);
       localSdp = sdp;
