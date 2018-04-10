@@ -68,7 +68,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
 
   // List of mandatory application permissions.
   private static final String[] MANDATORY_PERMISSIONS = {"android.permission.MODIFY_AUDIO_SETTINGS",
-      "android.permission.RECORD_AUDIO", "android.permission.INTERNET"};
+          "android.permission.INTERNET"};
 
   // Peer connection statistics callback period in ms.
   private static final int STAT_CALLBACK_PERIOD = 1000;
@@ -96,7 +96,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
   private PeerConnectionClient peerConnectionClient = null;
   private AppRTCClient appRtcClient;
   private SignalingParameters signalingParameters;
-  private AppRTCAudioManager audioManager = null;
   private EglBase rootEglBase;
   private SurfaceViewRenderer pipRenderer;
   private SurfaceViewRenderer fullscreenRenderer;
@@ -111,7 +110,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
   private boolean isError;
   private boolean callControlFragmentVisible = true;
   private long callStartedTimeMs = 0;
-  private boolean micEnabled = true;
   private static Intent mediaProjectionPermissionResultData;
   private static int mediaProjectionPermissionResultCode;
   // True if local view is in the fullscreen renderer.
@@ -218,10 +216,9 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
         new PeerConnectionClient.PeerConnectionParameters(true, false,
             false, displayMetrics.widthPixels, displayMetrics.heightPixels, 30,
             1700, VIDEO_CODEC_VP8, true, false,
-            32, AUDIO_CODEC_OPUS, false, false,
+            32, AUDIO_CODEC_OPUS, true, false,
             false, false, false, false, false,
             false, null);
-
 
     appRtcClient = new WebSocketRTCClient(this);
 
@@ -245,6 +242,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
 
 
     peerConnectionClient = PeerConnectionClient.getInstance();
+    peerConnectionClient.setAudioEnabled(false);
     peerConnectionClient.createPeerConnectionFactory(
         getApplicationContext(), peerConnectionParameters, CallActivity.this);
 
@@ -265,9 +263,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
   @TargetApi(19)
   private static int getSystemUiVisibility() {
     int flags = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN;
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-      flags |= View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-    }
+    flags |= View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
     return flags;
   }
 
@@ -338,33 +334,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
     disconnect();
   }
 
-  @Override
-  public void onCameraSwitch() {
-    if (peerConnectionClient != null) {
-      peerConnectionClient.switchCamera();
-    }
-  }
 
-  @Override
-  public void onVideoScalingSwitch(ScalingType scalingType) {
-    fullscreenRenderer.setScalingType(scalingType);
-  }
-
-  @Override
-  public void onCaptureFormatChange(int width, int height, int framerate) {
-    if (peerConnectionClient != null) {
-      peerConnectionClient.changeCaptureFormat(width, height, framerate);
-    }
-  }
-
-  @Override
-  public boolean onToggleMic() {
-    if (peerConnectionClient != null) {
-      micEnabled = !micEnabled;
-      peerConnectionClient.setAudioEnabled(micEnabled);
-    }
-    return micEnabled;
-  }
 
   // Helper functions.
   private void toggleCallControlFragmentVisibility() {
@@ -396,21 +366,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
     logAndToast(getString(R.string.connecting_to, roomConnectionParameters.roomUrl));
     appRtcClient.connectToRoom(roomConnectionParameters);
 
-    // Create and audio manager that will take care of audio routing,
-    // audio modes, audio device enumeration etc.
-    audioManager = AppRTCAudioManager.create(getApplicationContext());
-    // Store existing audio settings and change audio mode to
-    // MODE_IN_COMMUNICATION for best possible VoIP performance.
-    Log.d(TAG, "Starting the audio manager...");
-    audioManager.start(new AudioManagerEvents() {
-      // This method will be called each time the number of available audio
-      // devices has changed.
-      @Override
-      public void onAudioDeviceChanged(
-          AudioDevice audioDevice, Set<AudioDevice> availableAudioDevices) {
-        onAudioManagerDevicesChanged(audioDevice, availableAudioDevices);
-      }
-    });
   }
 
   // Should be called from UI thread
@@ -426,14 +381,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
     setSwappedFeeds(false /* isSwappedFeeds */);
   }
 
-  // This method is called when the audio manager reports audio device change,
-  // e.g. from wired headset to speakerphone.
-  private void onAudioManagerDevicesChanged(
-      final AudioDevice device, final Set<AudioDevice> availableDevices) {
-    Log.d(TAG, "onAudioManagerDevicesChanged: " + availableDevices + ", "
-            + "selected: " + device);
-    // TODO(henrika): add callback handler.
-  }
+
 
   // Disconnect from remote resources, dispose of local resources, and exit.
   private void disconnect() {
@@ -460,10 +408,7 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
       fullscreenRenderer.release();
       fullscreenRenderer = null;
     }
-    if (audioManager != null) {
-      audioManager.stop();
-      audioManager = null;
-    }
+
     if (iceConnected && !isError) {
       setResult(RESULT_OK);
     } else {
@@ -731,6 +676,6 @@ public class CallActivity extends Activity implements AppRTCClient.SignalingEven
 
   @Override
   public void onPeerConnectionError(final String description) {
-    reportError(description);
+    //reportError(description);
   }
 }

@@ -322,7 +322,7 @@ public class PeerConnectionClient {
     localVideoTrack = null;
     remoteVideoTrack = null;
     localVideoSender = null;
-    enableAudio = true;
+    enableAudio = false;
     localAudioTrack = null;
     statsTimer = new Timer();
 

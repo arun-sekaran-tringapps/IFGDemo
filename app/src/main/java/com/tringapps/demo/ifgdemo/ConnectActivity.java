@@ -45,8 +45,6 @@ import java.util.Random;
  */
 public class ConnectActivity extends Activity {
   private static final String TAG = "ConnectActivity";
-  private static final int REMOVE_FAVORITE_INDEX = 0;
-
   private EditText roomEditText;
 
   @Override
